@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PIXEL SNAKE</title>
+
+<style>
+/* ============================================================
+   RETRO SNAKE - STYLES
+   Look: old DOS / CRT monitor. Black screen, phosphor green.
+   ============================================================ */
+
+:root {
+  --phosphor:       #3dff6a;   /* bright green text */
+  --phosphor-dim:   #1c8c3c;   /* dim green, for labels and frames */
+  --phosphor-dark:  #0d2b17;   /* very dark green, for grid lines */
+  --screen-black:   #040a06;   /* the "glass" of the monitor */
+  --case:           #0a0f0c;   /* area around the screen */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #000;
+  color: var(--phosphor);
+  font-family: "Consolas", "Lucida Console", "Courier New", monospace;
+  /* Slight vignette so the page feels like a dark room with a monitor in it */
+  background-image: radial-gradient(ellipse at center, #0b120d 0%, #000 70%);
+  min-height: 100vh;
+}
+
+body {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px 16px 48px;
+}
+
+/* ---- The machine ---- */
+.cabinet {
+  width: 100%;
+  max-width: 700px;
+  background: var(--case);
+  border: 2px solid var(--phosphor-dim);
+  padding: 14px;
+}
+
+/* ---- Title bar ---- */
+.titlebar {
+  border: 2px solid var(--phosphor-dim);
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.titlebar h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 4px;
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(61, 255, 106, 0.55);
+}
+.titlebar span {
+  color: var(--phosphor-dim);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+/* ---- HUD: score / high score / speed / length ---- */
+.hud {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.stat {
+  border: 1px solid var(--phosphor-dim);
+  padding: 6px 8px;
+  text-align: center;
+  background: #060b08;
+}
+.stat .label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--phosphor-dim);
+  margin-bottom: 3px;
+}
+.stat .value {
+  display: block;
+  font-size: 20px;
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(61, 255, 106, 0.5);
+}
+
+/* ---- Screen area ---- */
+.screen {
+  position: relative;
+  background: var(--screen-black);
+  border: 2px solid var(--phosphor-dim);
+  line-height: 0;              /* removes the gap under the canvas */
+  overflow: hidden;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;  /* keeps the pixel art crisp when scaled */
+}
+
+/* CRT scanlines, drawn over the canvas */
+.scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0)    0px,
+    rgba(0, 0, 0, 0)    2px,
+    rgba(0, 0, 0, 0.22) 3px,
+    rgba(0, 0, 0, 0.22) 4px
+  );
+}
+
+/* ---- Overlay messages (start / paused / game over) ---- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  line-height: 1.5;
+  background: rgba(4, 10, 6, 0.86);
+  padding: 20px;
+}
+.overlay.hidden { display: none; }
+.overlay h2 {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: 6px;
+  text-shadow: 0 0 12px rgba(61, 255, 106, 0.6);
+}
+.overlay p {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: var(--phosphor);
+}
+.overlay p.dim { color: var(--phosphor-dim); }
+.overlay .final {
+  font-size: 18px;
+  letter-spacing: 2px;
+}
+
+/* Blinking "press a key" line, like an old DOS prompt */
+.blink { animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ---- Speed-up banner ---- */
+.banner {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 22px;
+  letter-spacing: 4px;
+  line-height: 1.2;
+  text-shadow: 0 0 10px rgba(61, 255, 106, 0.7);
+  pointer-events: none;
+  opacity: 0;
+}
+.banner.show { animation: banner-flash 1.8s steps(1); }
+@keyframes banner-flash {
+  0%, 100% { opacity: 0; }
+  10%, 30%, 50%, 70%, 90% { opacity: 1; }
+  20%, 40%, 60%, 80% { opacity: 0.25; }
+}
+
+/* ---- Buttons ---- */
+.controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+button {
+  flex: 1 1 140px;
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--phosphor);
+  background: #060b08;
+  border: 1px solid var(--phosphor-dim);
+  padding: 10px 8px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: var(--phosphor);
+  color: #040a06;
+}
+button:focus-visible {
+  outline: 2px solid var(--phosphor);
+  outline-offset: 2px;
+}
+button:disabled {
+  color: #1a4527;
+  border-color: #123019;
+  cursor: default;
+}
+
+/* ---- Keyboard hint ---- */
+.hint {
+  margin: 12px 0 0;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--phosphor-dim);
+  line-height: 1.7;
+}
+
+/* ---- Touch D-pad ---- */
+/* Hidden by default so the desktop layout stays exactly as it was. The
+   .touch-device class is added by the script on touch-capable devices. */
+.dpad { display: none; }
+.touch-hint { display: none; }
+
+body.touch-device .dpad,
+body.touch-device .touch-hint { display: grid; }
+body.touch-device .touch-hint { display: block; }
+body.touch-device .hint:not(.touch-hint) { display: none; }
+
+.dpad {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 8px;
+  justify-items: stretch;
+  max-width: 320px;
+  margin: 14px auto 0;
+  touch-action: none;           /* the pad never scrolls the page */
+}
+.dpad-button {
+  font-size: 22px;
+  line-height: 1;
+  padding: 0;
+  height: 64px;                 /* large enough for a thumb */
+  flex: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.dpad-button.up    { grid-column: 2; grid-row: 1; }
+.dpad-button.left  { grid-column: 1; grid-row: 2; }
+.dpad-button.down  { grid-column: 2; grid-row: 2; }
+.dpad-button.right { grid-column: 3; grid-row: 2; }
+
+/* Pressed state, since :hover means nothing on a touch screen */
+.dpad-button.pressed {
+  background: var(--phosphor);
+  color: #040a06;
+}
+
+/* Swiping on the board steers the snake instead of scrolling the page */
+body.touch-device .screen { touch-action: none; }
+
+/* Respect users who prefer no motion */
+@media (prefers-reduced-motion: reduce) {
+  .blink, .banner.show { animation: none; opacity: 1; }
+}
+
+/* Small screens: stack the HUD into two columns */
+@media (max-width: 480px) {
+  body { padding: 10px 8px 28px; }
+  .cabinet { padding: 10px; }
+  .hud { grid-template-columns: repeat(2, 1fr); }
+  .titlebar h1 { font-size: 16px; }
+  .overlay h2 { font-size: 24px; }
+  .overlay p { font-size: 13px; }
+  .controls { margin-top: 8px; gap: 6px; }
+  .controls button { flex: 1 1 100%; padding: 10px 8px; }
+  .dpad { max-width: 100%; margin-top: 8px; gap: 6px; }
+  .dpad-button { height: 56px; }
+}
+</style>
+</head>
+
+<body>
+
+<div class="cabinet">
+
+  <div class="titlebar">
+    <h1>PIXEL SNAKE</h1>
+    <span>v1.0</span>
+  </div>
+
+  <!-- Live stats -->
+  <div class="hud">
+    <div class="stat">
+      <span class="label">SCORE</span>
+      <span class="value" id="scoreValue">0</span>
+    </div>
+    <div class="stat">
+      <span class="label">HIGH SCORE</span>
+      <span class="value" id="highScoreValue">0</span>
+    </div>
+    <div class="stat">
+      <span class="label">SPEED</span>
+      <span class="value" id="speedValue">1</span>
+    </div>
+    <div class="stat">
+      <span class="label">LENGTH</span>
+      <span class="value" id="lengthValue">3</span>
+    </div>
+  </div>
+
+  <!-- Playfield -->
+  <div class="screen">
+    <canvas id="gameCanvas" width="672" height="504"></canvas>
+    <div class="scanlines"></div>
+    <div class="banner" id="banner"></div>
+
+    <div class="overlay" id="overlay">
+      <h2 id="overlayTitle">PIXEL SNAKE</h2>
+      <p id="overlayText">Eat the apples. Do not eat yourself.</p>
+      <p class="dim" id="overlayHint">Arrow keys or WASD to steer</p>
+      <p class="blink" id="overlayPrompt">PRESS ENTER TO START</p>
+    </div>
+  </div>
+
+  <!-- Touch D-pad. Hidden on desktop, shown on touch devices and narrow screens. -->
+  <div class="dpad" id="dpad" aria-label="Direction pad">
+    <button class="dpad-button up"    data-direction="up"    aria-label="Up">&#9650;</button>
+    <button class="dpad-button left"  data-direction="left"  aria-label="Left">&#9664;</button>
+    <button class="dpad-button right" data-direction="right" aria-label="Right">&#9654;</button>
+    <button class="dpad-button down"  data-direction="down"  aria-label="Down">&#9660;</button>
+  </div>
+
+  <!-- Buttons -->
+  <div class="controls">
+    <button id="startButton">START GAME</button>
+    <button id="pauseButton" disabled>PAUSE</button>
+    <button id="restartButton">RESTART</button>
+  </div>
+
+  <p class="hint">
+    Move: arrow keys or W A S D &nbsp;&nbsp;|&nbsp;&nbsp; Pause: spacebar &nbsp;&nbsp;|&nbsp;&nbsp; Start / restart: enter
+  </p>
+
+  <p class="hint touch-hint">
+    Move: the pad above, or swipe on the board
+  </p>
+
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   1. CONFIGURATION
+   Everything you might want to tweak lives here.
+   ============================================================ */
+
+const CONFIG = {
+  // Board size, measured in cells. 28 x 21 cells of 24px = 672 x 504 pixels.
+  columns: 28,
+  rows: 21,
+  cellSize: 24,
+
+  startingLength: 3,        // how many segments the snake starts with
+  pointsPerApple: 100,      // score for one apple
+  growthPerApple: 1,        // segments added per apple (permanent)
+  pointsPerSpeedLevel: 1000,// every this many points, speed goes up
+
+  // Tick time = how many milliseconds between snake moves. Lower = faster.
+  // Level 1 is 260ms, and each level shaves off 12ms, so the jump between
+  // levels is small. The speed stops dropping at 110ms (reached at level 13).
+  startingTickMs: 260,      // level 1: slow and comfortable
+  tickReductionPerLevel: 12,// each level removes this many ms
+  minimumTickMs: 110,       // fastest the game will ever get
+
+  chompDurationMs: 800      // how long the "CHOMP!" text stays on screen
+};
+
+// Colors used on the canvas
+const COLORS = {
+  background:   "#040a06",
+  gridLine:     "#0c1f13",
+  snakeHead:    "#5cff85",
+  snakeBodyA:   "#3dff6a",
+  snakeBodyB:   "#2bc251",
+  snakeOutline: "#0b2a15",
+  eyeWhite:     "#eafff0",
+  eyePupil:     "#04150a",
+  mouth:        "#04150a",
+  chompText:    "#eafff0"
+};
+
+/* ============================================================
+   2. PIXEL ART
+   The apple is drawn from a small character map, one letter per
+   pixel, so it reads as real pixel art instead of a square.
+   ============================================================ */
+
+const APPLE_PIXELS = [
+  "....s...",
+  "...sll..",
+  ".rrrrrr.",
+  "rhrrrrdr",
+  "rhrrrrdd",
+  "rrrrrrdd",
+  ".rrrrdd.",
+  "..rrdd.."
+];
+
+const APPLE_COLORS = {
+  r: "#e03a3a",  // apple red
+  d: "#992222",  // shaded side
+  h: "#ff8f8f",  // highlight
+  l: "#3dff6a",  // leaf
+  s: "#7a4a1e"   // stem
+};
+
+/* ============================================================
+   3. GAME STATE
+   ============================================================ */
+
+// Possible states: "ready", "playing", "paused", "over"
+let gameState = "ready";
+
+let snake = [];             // array of {x, y}; snake[0] is the head
+let direction = { x: 1, y: 0 };          // direction the next move will use
+let lastMovedDirection = { x: 1, y: 0 }; // direction the last move actually used
+let directionQueue = [];    // buffered turns, so fast key presses are not lost
+let apple = { x: 0, y: 0 };
+
+let score = 0;
+let highScore = 0;          // kept for this browser session
+let speedLevel = 1;
+let mouthOpen = false;      // flips every tick to animate the mouth
+let effects = [];           // floating "CHOMP!" texts
+
+let lastFrameTime = 0;      // timestamp of the previous animation frame
+let timeSinceLastTick = 0;  // milliseconds accumulated toward the next move
+
+/* ============================================================
+   4. DOM REFERENCES
+   ============================================================ */
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const scoreValue     = document.getElementById("scoreValue");
+const highScoreValue = document.getElementById("highScoreValue");
+const speedValue     = document.getElementById("speedValue");
+const lengthValue    = document.getElementById("lengthValue");
+
+const overlay        = document.getElementById("overlay");
+const overlayTitle   = document.getElementById("overlayTitle");
+const overlayText    = document.getElementById("overlayText");
+const overlayHint    = document.getElementById("overlayHint");
+const overlayPrompt  = document.getElementById("overlayPrompt");
+const banner         = document.getElementById("banner");
+
+const startButton    = document.getElementById("startButton");
+const pauseButton    = document.getElementById("pauseButton");
+const restartButton  = document.getElementById("restartButton");
+
+/* ============================================================
+   5. SETTING UP A GAME
+   ============================================================ */
+
+// Puts the snake, apple, score and speed back to their starting values.
+function resetGame() {
+  const startX = Math.floor(CONFIG.columns / 4);
+  const startY = Math.floor(CONFIG.rows / 2);
+
+  snake = [];
+  for (let i = 0; i < CONFIG.startingLength; i++) {
+    // Head first, then the body trailing to the left
+    snake.push({ x: startX - i, y: startY });
+  }
+
+  direction = { x: 1, y: 0 };
+  lastMovedDirection = { x: 1, y: 0 };
+  directionQueue = [];
+  score = 0;
+  speedLevel = 1;
+  mouthOpen = false;
+  effects = [];
+  timeSinceLastTick = 0;
+
+  placeApple();
+  updateHud();
+}
+
+// Begins play from a fresh board.
+function startGame() {
+  resetGame();
+  gameState = "playing";
+  hideOverlay();
+  startButton.disabled = true;
+  pauseButton.disabled = false;
+  pauseButton.textContent = "PAUSE";
+}
+
+// Pause and resume share one button.
+function togglePause() {
+  if (gameState === "playing") {
+    gameState = "paused";
+    pauseButton.textContent = "RESUME";
+    showOverlay("PAUSED", "The snake is holding its breath.", "", "PRESS SPACE TO RESUME");
+  } else if (gameState === "paused") {
+    gameState = "playing";
+    pauseButton.textContent = "PAUSE";
+    hideOverlay();
+  }
+}
+
+// Ends the run and shows the game over screen.
+function endGame(reason) {
+  gameState = "over";
+  pauseButton.disabled = true;
+  pauseButton.textContent = "PAUSE";
+  startButton.disabled = false;
+
+  if (score > highScore) {
+    highScore = score;
+  }
+  updateHud();
+
+  showOverlay(
+    "GAME OVER",
+    reason,
+    "FINAL SCORE " + score + "   LENGTH " + snake.length,
+    "PRESS START TO PLAY AGAIN"
+  );
+  overlayText.classList.add("dim");
+  overlayHint.classList.remove("dim");
+  overlayHint.classList.add("final");
+}
+
+/* ============================================================
+   6. APPLE PLACEMENT
+   ============================================================ */
+
+// Drops a new apple on any cell the snake is not using.
+function placeApple() {
+  const freeCells = [];
+
+  for (let x = 0; x < CONFIG.columns; x++) {
+    for (let y = 0; y < CONFIG.rows; y++) {
+      if (!isSnakeCell(x, y)) {
+        freeCells.push({ x: x, y: y });
+      }
+    }
+  }
+
+  // No free cell means the snake covers the whole board.
+  if (freeCells.length === 0) {
+    apple = null;
+    return;
+  }
+
+  apple = freeCells[Math.floor(Math.random() * freeCells.length)];
+}
+
+// True if any snake segment sits on this cell.
+function isSnakeCell(x, y) {
+  for (let i = 0; i < snake.length; i++) {
+    if (snake[i].x === x && snake[i].y === y) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* ============================================================
+   7. INPUT
+   Turns are buffered in a queue. Each tick takes one turn off the
+   queue, which stops two fast key presses from folding the snake
+   back into itself.
+   ============================================================ */
+
+const KEY_DIRECTIONS = {
+  ArrowUp:    { x: 0,  y: -1 },
+  ArrowDown:  { x: 0,  y: 1 },
+  ArrowLeft:  { x: -1, y: 0 },
+  ArrowRight: { x: 1,  y: 0 },
+  w: { x: 0, y: -1 },
+  s: { x: 0, y: 1 },
+  a: { x: -1, y: 0 },
+  d: { x: 1, y: 0 }
+};
+
+function handleKeyDown(event) {
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
+  // Steering
+  if (KEY_DIRECTIONS[key]) {
+    event.preventDefault();
+    queueDirection(KEY_DIRECTIONS[key]);
+    return;
+  }
+
+  // Spacebar pauses and resumes
+  if (key === " ") {
+    event.preventDefault();
+    if (gameState === "playing" || gameState === "paused") {
+      togglePause();
+    }
+    return;
+  }
+
+  // Enter starts a new game
+  if (key === "Enter") {
+    event.preventDefault();
+    if (gameState === "ready" || gameState === "over") {
+      startGame();
+    }
+  }
+}
+
+// Takes a turn from the keyboard.
+//
+// The first turn after a move is applied straight away, so a key pressed at
+// the last moment before the snake reaches a wall still counts: the move that
+// follows uses the new direction. Any further turns pressed in the same tick
+// go into the queue and are used on the next move instead.
+function queueDirection(newDirection) {
+  if (gameState !== "playing") return;
+
+  const hasTurnedSinceLastMove = !isSameDirection(direction, lastMovedDirection);
+
+  if (!hasTurnedSinceLastMove && directionQueue.length === 0) {
+    // No turn applied yet this tick. Check it against the direction the snake
+    // is actually travelling, so it can never double back into its own neck.
+    if (isOppositeDirection(newDirection, lastMovedDirection)) return;
+    if (isSameDirection(newDirection, lastMovedDirection)) return;
+    direction = newDirection;
+    return;
+  }
+
+  // A turn is already pending, so buffer this one behind it.
+  const reference = directionQueue.length > 0
+    ? directionQueue[directionQueue.length - 1]
+    : direction;
+
+  if (isOppositeDirection(newDirection, reference)) return;
+  if (isSameDirection(newDirection, reference)) return;
+  if (directionQueue.length >= 2) return;   // keep the buffer short
+
+  directionQueue.push(newDirection);
+}
+
+function isSameDirection(a, b) {
+  return a.x === b.x && a.y === b.y;
+}
+
+function isOppositeDirection(a, b) {
+  return a.x === -b.x && a.y === -b.y;
+}
+
+/* ============================================================
+   8. THE GAME LOOP
+   requestAnimationFrame draws every frame so the effects stay
+   smooth, while the snake only moves once per "tick".
+   ============================================================ */
+
+function gameLoop(timestamp) {
+  // Clamped so that switching browser tabs does not fast-forward the snake.
+  const rawDelta = lastFrameTime === 0 ? 0 : timestamp - lastFrameTime;
+  const deltaTime = Math.min(rawDelta, 250);
+  lastFrameTime = timestamp;
+
+  if (gameState === "playing") {
+    timeSinceLastTick += deltaTime;
+
+    // At most one move per drawn frame. That way every key press gets a
+    // chance to be seen between moves, which keeps turning responsive.
+    const tickMs = currentTickMs();
+    if (timeSinceLastTick >= tickMs) {
+      timeSinceLastTick = 0;
+      updateGame();
+    }
+  }
+
+  draw(timestamp);
+  requestAnimationFrame(gameLoop);
+}
+
+// How many milliseconds between moves at the current speed level.
+function currentTickMs() {
+  const ms = CONFIG.startingTickMs - (speedLevel - 1) * CONFIG.tickReductionPerLevel;
+  return Math.max(CONFIG.minimumTickMs, ms);
+}
+
+// One step of the snake.
+function updateGame() {
+  // Apply the next buffered turn, if there is one. Turns pressed since the
+  // last move have already been written into `direction` by queueDirection.
+  if (isSameDirection(direction, lastMovedDirection) && directionQueue.length > 0) {
+    direction = directionQueue.shift();
+  }
+  lastMovedDirection = direction;
+
+  const head = snake[0];
+  const newHead = { x: head.x + direction.x, y: head.y + direction.y };
+
+  // Wall collision
+  if (newHead.x < 0 || newHead.x >= CONFIG.columns ||
+      newHead.y < 0 || newHead.y >= CONFIG.rows) {
+    endGame("You hit the wall.");
+    return;
+  }
+
+  const isEating = apple !== null && newHead.x === apple.x && newHead.y === apple.y;
+
+  // Self collision. When the snake is not eating, the tail cell is about to
+  // be freed up, so moving into it is allowed.
+  const lastIndex = snake.length - 1;
+  for (let i = 0; i < snake.length; i++) {
+    if (i === lastIndex && !isEating) continue;
+    if (snake[i].x === newHead.x && snake[i].y === newHead.y) {
+      endGame("You ate yourself.");
+      return;
+    }
+  }
+
+  // Move: add the new head
+  snake.unshift(newHead);
+
+  if (isEating) {
+    score += CONFIG.pointsPerApple;
+    addChompEffect(newHead.x, newHead.y);
+    checkSpeedUp();
+    placeApple();
+
+    // Growing means keeping extra segments instead of dropping the tail.
+    // growthPerApple of 1 is already covered by the unshift above.
+    for (let i = 1; i < CONFIG.growthPerApple; i++) {
+      snake.push({ x: snake[snake.length - 1].x, y: snake[snake.length - 1].y });
+    }
+
+    // The board is completely full: nothing left to eat.
+    if (apple === null) {
+      endGame("You filled the whole board.");
+      return;
+    }
+  } else {
+    snake.pop();   // no apple, so the tail follows the head
+  }
+
+  mouthOpen = !mouthOpen;   // chew animation
+  updateHud();
+}
+
+// Raises the speed level when the score crosses a threshold.
+function checkSpeedUp() {
+  const newLevel = Math.floor(score / CONFIG.pointsPerSpeedLevel) + 1;
+  if (newLevel > speedLevel) {
+    speedLevel = newLevel;
+    showBanner("SPEED UP! LEVEL " + speedLevel);
+  }
+}
+
+/* ============================================================
+   9. DRAWING
+   ============================================================ */
+
+function draw(timestamp) {
+  drawBackground();
+  if (apple !== null) drawApple(apple.x, apple.y);
+  drawSnake();
+  drawEffects(timestamp);
+}
+
+// Black screen with a faint grid, like graph paper on a CRT.
+function drawBackground() {
+  const cell = CONFIG.cellSize;
+
+  ctx.fillStyle = COLORS.background;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = COLORS.gridLine;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = 1; x < CONFIG.columns; x++) {
+    ctx.moveTo(x * cell + 0.5, 0);
+    ctx.lineTo(x * cell + 0.5, canvas.height);
+  }
+  for (let y = 1; y < CONFIG.rows; y++) {
+    ctx.moveTo(0, y * cell + 0.5);
+    ctx.lineTo(canvas.width, y * cell + 0.5);
+  }
+  ctx.stroke();
+}
+
+// Draws the apple from the pixel map above.
+function drawApple(cellX, cellY) {
+  const cell = CONFIG.cellSize;
+  const pixel = cell / 8;               // the art is 8 x 8
+  const originX = cellX * cell;
+  const originY = cellY * cell;
+
+  for (let row = 0; row < APPLE_PIXELS.length; row++) {
+    const line = APPLE_PIXELS[row];
+    for (let col = 0; col < line.length; col++) {
+      const color = APPLE_COLORS[line[col]];
+      if (!color) continue;             // "." means transparent
+      ctx.fillStyle = color;
+      ctx.fillRect(originX + col * pixel, originY + row * pixel, pixel, pixel);
+    }
+  }
+}
+
+// Draws the whole snake: body segments first, then the head on top.
+function drawSnake() {
+  for (let i = snake.length - 1; i >= 1; i--) {
+    drawBodySegment(snake[i], i);
+  }
+  drawHead(snake[0]);
+}
+
+function drawBodySegment(segment, index) {
+  const cell = CONFIG.cellSize;
+  const x = segment.x * cell;
+  const y = segment.y * cell;
+
+  // Alternating shades give the body a scaled, striped look.
+  ctx.fillStyle = (index % 2 === 0) ? COLORS.snakeBodyA : COLORS.snakeBodyB;
+  ctx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+
+  // Dark inner square so segments stay readable when the snake is long.
+  ctx.fillStyle = COLORS.snakeOutline;
+  ctx.fillRect(x + cell / 2 - 2, y + cell / 2 - 2, 4, 4);
+}
+
+// The head is drawn facing right, then rotated to match the direction,
+// so there is only one drawing to maintain.
+function drawHead(head) {
+  const cell = CONFIG.cellSize;
+  const half = cell / 2;
+  const centerX = head.x * cell + half;
+  const centerY = head.y * cell + half;
+
+  // Angle in radians for each direction
+  let angle = 0;
+  if (direction.x === 1)       angle = 0;
+  else if (direction.x === -1) angle = Math.PI;
+  else if (direction.y === -1) angle = -Math.PI / 2;
+  else if (direction.y === 1)  angle = Math.PI / 2;
+
+  ctx.save();
+  ctx.translate(centerX, centerY);
+  ctx.rotate(angle);
+
+  // Head block
+  ctx.fillStyle = COLORS.snakeHead;
+  ctx.fillRect(-half + 1, -half + 1, cell - 2, cell - 2);
+
+  // Mouth on the leading edge, open or closed depending on the tick
+  ctx.fillStyle = COLORS.mouth;
+  if (mouthOpen) {
+    ctx.beginPath();
+    ctx.moveTo(half - 1, -half + 3);
+    ctx.lineTo(half - 1, half - 3);
+    ctx.lineTo(half - 9, 0);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.fillRect(half - 7, -1, 6, 2);
+  }
+
+  // Eyes: white square with a dark pupil, one above and one below
+  const eyeSize = 5;
+  const pupilSize = 2;
+  const eyeX = -3;
+
+  [-7, 2].forEach(function (eyeY) {
+    ctx.fillStyle = COLORS.eyeWhite;
+    ctx.fillRect(eyeX, eyeY, eyeSize, eyeSize);
+    ctx.fillStyle = COLORS.eyePupil;
+    ctx.fillRect(eyeX + 2, eyeY + 2, pupilSize, pupilSize);
+  });
+
+  ctx.restore();
+}
+
+/* ============================================================
+   10. THE CHOMP EFFECT
+   ============================================================ */
+
+function addChompEffect(cellX, cellY) {
+  effects.push({
+    x: cellX * CONFIG.cellSize + CONFIG.cellSize / 2,
+    y: cellY * CONFIG.cellSize,
+    born: performance.now()
+  });
+}
+
+// Floating "CHOMP!" text that rises and fades out.
+function drawEffects(timestamp) {
+  const now = timestamp || performance.now();
+
+  for (let i = effects.length - 1; i >= 0; i--) {
+    const effect = effects[i];
+    const age = now - effect.born;
+
+    if (age > CONFIG.chompDurationMs) {
+      effects.splice(i, 1);
+      continue;
+    }
+
+    const progress = age / CONFIG.chompDurationMs;
+
+    ctx.save();
+    ctx.globalAlpha = 1 - progress;
+    ctx.fillStyle = COLORS.chompText;
+    ctx.font = "bold 18px Consolas, 'Courier New', monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("CHOMP!", effect.x, effect.y - progress * 22);
+    ctx.restore();
+  }
+}
+
+/* ============================================================
+   11. HUD, OVERLAY AND BANNER
+   ============================================================ */
+
+function updateHud() {
+  scoreValue.textContent     = score;
+  highScoreValue.textContent = Math.max(highScore, score);
+  speedValue.textContent     = speedLevel;
+  lengthValue.textContent    = snake.length;
+}
+
+function showOverlay(title, text, hint, prompt) {
+  overlayTitle.textContent  = title;
+  overlayText.textContent   = text;
+  overlayHint.textContent   = hint;
+  overlayPrompt.textContent = prompt;
+  overlay.classList.remove("hidden");
+}
+
+function hideOverlay() {
+  overlay.classList.add("hidden");
+  overlayText.classList.remove("dim");
+  overlayHint.classList.remove("final");
+  overlayHint.classList.add("dim");
+}
+
+// Flashes the speed-up message across the top of the screen.
+function showBanner(message) {
+  banner.textContent = message;
+  banner.classList.remove("show");
+  void banner.offsetWidth;        // forces the animation to restart
+  banner.classList.add("show");
+}
+
+/* ============================================================
+   12. WIRING IT ALL UP
+   ============================================================ */
+
+document.addEventListener("keydown", handleKeyDown);
+
+// After a click, the button keeps keyboard focus, and a later spacebar press
+// would activate the button as well as the key handler. Dropping focus keeps
+// the spacebar and the button in step with each other.
+function handleButtonClick(action) {
+  return function (event) {
+    event.currentTarget.blur();
+    action();
+  };
+}
+
+startButton.addEventListener("click", handleButtonClick(startGame));
+pauseButton.addEventListener("click", handleButtonClick(togglePause));
+restartButton.addEventListener("click", handleButtonClick(startGame));
+
+/* ============================================================
+   12b. TOUCH CONTROLS
+   The D-pad and swipes both feed queueDirection, the same function
+   the keyboard uses, so reversal protection and the turn queue
+   behave identically on every device.
+   ============================================================ */
+
+// Named directions shared by the D-pad buttons and the swipe reader.
+const TOUCH_DIRECTIONS = {
+  up:    { x: 0,  y: -1 },
+  down:  { x: 0,  y: 1 },
+  left:  { x: -1, y: 0 },
+  right: { x: 1,  y: 0 }
+};
+
+const MINIMUM_SWIPE_DISTANCE = 24;   // pixels, so a tap is not read as a swipe
+
+const dpad = document.getElementById("dpad");
+const screenElement = canvas.parentElement;
+
+// Show the touch controls only where they are useful.
+function detectTouchDevice() {
+  const hasTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
+  if (hasTouch) {
+    document.body.classList.add("touch-device");
+  }
+}
+
+// D-pad. pointerdown fires as soon as the thumb lands, which feels quicker
+// than waiting for a click and keeps the turn in the current tick.
+dpad.addEventListener("pointerdown", function (event) {
+  const button = event.target.closest(".dpad-button");
+  if (!button) return;
+
+  event.preventDefault();          // no scrolling, no zooming, no focus ring
+  button.classList.add("pressed");
+  queueDirection(TOUCH_DIRECTIONS[button.dataset.direction]);
+});
+
+// Clear the pressed look when the thumb lifts or slides away.
+["pointerup", "pointercancel", "pointerleave"].forEach(function (eventName) {
+  dpad.addEventListener(eventName, function () {
+    const pressedButtons = dpad.querySelectorAll(".dpad-button.pressed");
+    pressedButtons.forEach(function (button) {
+      button.classList.remove("pressed");
+    });
+  });
+});
+
+// Swipes on the board itself.
+let swipeStartX = 0;
+let swipeStartY = 0;
+let swipeTracking = false;
+
+screenElement.addEventListener("touchstart", function (event) {
+  if (event.touches.length !== 1) return;
+  swipeStartX = event.touches[0].clientX;
+  swipeStartY = event.touches[0].clientY;
+  swipeTracking = true;
+}, { passive: true });
+
+screenElement.addEventListener("touchend", function (event) {
+  if (!swipeTracking) return;
+  swipeTracking = false;
+
+  const touch = event.changedTouches[0];
+  const deltaX = touch.clientX - swipeStartX;
+  const deltaY = touch.clientY - swipeStartY;
+
+  // The larger of the two movements decides the direction.
+  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    if (Math.abs(deltaX) < MINIMUM_SWIPE_DISTANCE) return;
+    queueDirection(deltaX > 0 ? TOUCH_DIRECTIONS.right : TOUCH_DIRECTIONS.left);
+  } else {
+    if (Math.abs(deltaY) < MINIMUM_SWIPE_DISTANCE) return;
+    queueDirection(deltaY > 0 ? TOUCH_DIRECTIONS.down : TOUCH_DIRECTIONS.up);
+  }
+}, { passive: true });
+
+screenElement.addEventListener("touchcancel", function () {
+  swipeTracking = false;
+}, { passive: true });
+
+detectTouchDevice();
+
+resetGame();
+requestAnimationFrame(gameLoop);
+</script>
+
+</body>
+</html>
